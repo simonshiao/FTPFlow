@@ -668,6 +668,18 @@ namespace FtpFlow
             SavedProfile added = new SavedProfile { Connection = settings }; profiles.Add(added); return added;
         }
 
+        private ConnectionSettings NewAccountDefaults()
+        {
+            ConnectionSettings current = selectedProfile == null ? new ConnectionSettings() : selectedProfile.Connection;
+            return new ConnectionSettings
+            {
+                Host = current == null ? "" : current.Host,
+                Port = current == null ? 21 : current.Port,
+                InitialPath = "/",
+                EncodingName = current == null ? "UTF-8" : current.EncodingName
+            };
+        }
+
         private void SelectProfile(SavedProfile profile)
         {
             if (profile == null) return;
@@ -682,8 +694,7 @@ namespace FtpFlow
         {
             if (busy) return;
             StoreCurrentProfile();
-            ConnectionSettings current = selectedProfile == null ? new ConnectionSettings() : selectedProfile.Connection;
-            ConnectionSettings entered = AskForConnection(current);
+            ConnectionSettings entered = AskForConnection(NewAccountDefaults());
             if (entered == null) return;
             SavedProfile profile = AddOrUpdateProfile(entered);
             SelectProfile(profile);
@@ -717,8 +728,7 @@ namespace FtpFlow
             footer.Children.Add(add); footer.Children.Add(delete); footer.Children.Add(use); Grid.SetRow(footer, 2); root.Children.Add(footer); dialog.Content = root;
             add.Click += delegate
             {
-                ConnectionSettings current = selectedProfile == null ? new ConnectionSettings() : selectedProfile.Connection;
-                ConnectionSettings entered = AskForConnection(current); if (entered == null) return;
+                ConnectionSettings entered = AskForConnection(NewAccountDefaults()); if (entered == null) return;
                 SavedProfile added = AddOrUpdateProfile(entered); list.Items.Refresh(); list.SelectedItem = added; SelectProfile(added);
             };
             delete.Click += delegate

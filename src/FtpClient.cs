@@ -22,7 +22,7 @@ namespace FtpFlow
 
         public ConnectionSettings()
         {
-            Host = ""; Port = 21; User = ""; Password = ""; InitialPath = "/simon"; EncodingName = "UTF-8";
+            Host = ""; Port = 21; User = ""; Password = ""; InitialPath = "/"; EncodingName = "UTF-8";
         }
     }
 

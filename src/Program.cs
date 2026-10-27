@@ -52,12 +52,13 @@ namespace FtpFlow
         private sealed class SavedProfile
         {
             public string Id { get; set; }
-            public string Name { get; set; }
             public ConnectionSettings Connection { get; set; }
+            public string Name { get { return Connection == null || string.IsNullOrWhiteSpace(Connection.User) ? "尚未設定帳號" : Connection.User; } }
+            public string ServerLabel { get { return Connection == null || string.IsNullOrWhiteSpace(Connection.Host) ? "尚未設定伺服器" : Connection.Host + ":" + Connection.Port; } }
 
             public SavedProfile()
             {
-                Id = Guid.NewGuid().ToString("N"); Name = "新帳號"; Connection = new ConnectionSettings();
+                Id = Guid.NewGuid().ToString("N"); Connection = new ConnectionSettings();
             }
         }
 
@@ -101,7 +102,7 @@ namespace FtpFlow
             detailItemStyle = Files.ItemContainerStyle;
             SetViewMode(LoadTilePreference(), false);
             Button("ManageAccountsInSettingsButton").Click += delegate { ManageProfiles(); };
-            Button("ManageProfilesButton").Click += delegate { ManageProfiles(); };
+            Button("AddProfileButton").Click += delegate { AddProfile(); };
             Button("SettingsGearButton").Click += delegate
             {
                 Expander settings = Find<Expander>("ConnectionSettingsExpander");
@@ -269,7 +270,7 @@ namespace FtpFlow
                     if (File.Exists(legacy))
                     {
                         root = XElement.Load(legacy);
-                        SavedProfile profile = new SavedProfile { Name = "原有 FTP 帳號", Connection = ParseConnection(root) };
+                        SavedProfile profile = new SavedProfile { Connection = ParseConnection(root) };
                         profiles.Add(profile); selectedProfile = profile; migrated = true;
                     }
                 }
@@ -279,7 +280,6 @@ namespace FtpFlow
                     {
                         SavedProfile profile = new SavedProfile();
                         profile.Id = (string)element.Attribute("id") ?? profile.Id;
-                        profile.Name = (string)element.Attribute("name") ?? "FTP 帳號";
                         profile.Connection = ParseConnection(element);
                         profiles.Add(profile);
                     }
@@ -288,7 +288,7 @@ namespace FtpFlow
                     apiPort = root.Element("ApiPort") == null ? 17821 : ParsePort((string)root.Element("ApiPort"));
                     apiToken = UnprotectSecret((string)root.Element("ApiToken") ?? "");
                 }
-                if (profiles.Count == 0) profiles.Add(new SavedProfile { Name = "新增 FTP 帳號" });
+                if (profiles.Count == 0) profiles.Add(new SavedProfile());
                 if (selectedProfile == null) selectedProfile = profiles[0];
                 Find<ComboBox>("ProfileBox").DisplayMemberPath = "Name";
                 Find<ComboBox>("ProfileBox").ItemsSource = profiles;
@@ -360,14 +360,14 @@ namespace FtpFlow
             SavedProfile profile = selectedProfile;
             ConnectionSettings settings = profile == null ? null : profile.Connection;
             string host = settings == null || string.IsNullOrWhiteSpace(settings.Host) ? "尚未設定伺服器" : settings.Host + ":" + settings.Port;
-            string user = settings == null || string.IsNullOrWhiteSpace(settings.User) ? "請到設定填入帳號" : settings.User;
-            Find<TextBlock>("ProfileSummaryLabel").Text = profile == null ? "請新增 FTP 帳號" : host + "  ·  " + user;
+            string path = settings == null || string.IsNullOrWhiteSpace(settings.InitialPath) ? "/" : settings.InitialPath;
+            Find<TextBlock>("ProfileSummaryLabel").Text = profile == null ? "請新增 FTP 帳號" : host + "  ·  " + path;
         }
 
         private XElement ProfileElement(SavedProfile profile)
         {
             ConnectionSettings s = profile.Connection ?? new ConnectionSettings();
-            return new XElement("Profile", new XAttribute("id", profile.Id), new XAttribute("name", profile.Name),
+            return new XElement("Profile", new XAttribute("id", profile.Id),
                 new XElement("Host", s.Host ?? ""), new XElement("Port", s.Port), new XElement("User", s.User ?? ""),
                 new XElement("Password", ProtectSecret(s.Password)), new XElement("InitialPath", s.InitialPath ?? "/"), new XElement("Encoding", s.EncodingName ?? "UTF-8"));
         }
@@ -619,66 +619,118 @@ namespace FtpFlow
             panel.Children.Add(box); return box;
         }
 
-        private string AskForName(string title, string initial)
+        private ConnectionSettings AskForConnection(ConnectionSettings current)
         {
-            Window dialog = new Window { Title = title, Owner = Window, Width = 390, Height = 190, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize, Background = Brushes.White, FontFamily = Window.FontFamily };
-            StackPanel panel = new StackPanel { Margin = new Thickness(22) };
-            TextBox input = AddTextField(panel, "顯示名稱", initial, 38);
-            StackPanel buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 17, 0, 0) };
-            Button cancel = new Button { Content = "取消", MinWidth = 76, Margin = new Thickness(0, 0, 8, 0), IsCancel = true };
-            Button save = new Button { Content = "確定", MinWidth = 76, IsDefault = true, Background = new SolidColorBrush(Color.FromRgb(0, 122, 255)), Foreground = Brushes.White };
-            buttons.Children.Add(cancel); buttons.Children.Add(save); panel.Children.Add(buttons); dialog.Content = panel;
-            save.Click += delegate { dialog.DialogResult = true; dialog.Close(); };
-            dialog.Loaded += delegate { input.Focus(); input.SelectAll(); };
-            return dialog.ShowDialog() == true ? input.Text.Trim() : null;
+            if (current == null) current = new ConnectionSettings();
+            Window dialog = new Window { Title = "新增 FTP 帳號", Owner = Window, Width = 470, Height = 610, MinWidth = 440, MinHeight = 560, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = new SolidColorBrush(Color.FromRgb(245, 245, 247)), FontFamily = Window.FontFamily };
+            Grid root = new Grid { Margin = new Thickness(22) };
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            StackPanel heading = new StackPanel { Margin = new Thickness(2, 0, 0, 13) };
+            heading.Children.Add(new TextBlock { Text = "新增 FTP 帳號", FontSize = 21, FontWeight = FontWeights.SemiBold });
+            heading.Children.Add(new TextBlock { Text = "使用者名稱會作為帳號名稱，密碼只需輸入一次。", FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 130)), Margin = new Thickness(0, 5, 0, 0) });
+            Grid.SetRow(heading, 0); root.Children.Add(heading);
+            StackPanel form = new StackPanel();
+            TextBox host = AddTextField(form, "伺服器", current.Host, 38);
+            TextBox port = AddTextField(form, "連接埠", current.Port.ToString(), 38);
+            TextBox user = AddTextField(form, "使用者名稱", "", 38);
+            TextBox password = AddTextField(form, "密碼", "", 38);
+            TextBox initial = AddTextField(form, "起始目錄", string.IsNullOrWhiteSpace(current.InitialPath) ? "/" : current.InitialPath, 38);
+            form.Children.Add(new TextBlock { Text = "檔名編碼", Foreground = new SolidColorBrush(Color.FromRgb(99, 99, 109)), FontSize = 12, Margin = new Thickness(0, 11, 0, 6) });
+            ComboBox encoding = new ComboBox { Height = 38, Padding = new Thickness(9, 6, 9, 6), ItemsSource = new string[] { "UTF-8", "GBK", "Big5" }, SelectedItem = current.EncodingName };
+            if (encoding.SelectedItem == null) encoding.SelectedIndex = 0;
+            form.Children.Add(encoding);
+            ScrollViewer scroll = new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+            Grid.SetRow(scroll, 1); root.Children.Add(scroll);
+            StackPanel footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+            Button cancel = new Button { Content = "取消", MinWidth = 82, Margin = new Thickness(0, 0, 8, 0), IsCancel = true };
+            Button save = new Button { Content = "儲存帳號", MinWidth = 105, IsDefault = true, Background = new SolidColorBrush(Color.FromRgb(0, 122, 255)), Foreground = Brushes.White };
+            footer.Children.Add(cancel); footer.Children.Add(save); Grid.SetRow(footer, 2); root.Children.Add(footer); dialog.Content = root;
+            ConnectionSettings result = null;
+            save.Click += delegate
+            {
+                int parsedPort;
+                if (string.IsNullOrWhiteSpace(host.Text) || host.Text.Contains("://") || host.Text.Contains("/") || host.Text.Any(char.IsWhiteSpace)) { MessageBox.Show(dialog, "請輸入不含 ftp:// 的伺服器名稱或 IP。", "伺服器格式不正確", MessageBoxButton.OK, MessageBoxImage.Information); host.Focus(); return; }
+                if (!int.TryParse(port.Text, out parsedPort) || parsedPort < 1 || parsedPort > 65535) { MessageBox.Show(dialog, "連接埠請輸入 1 到 65535。", "連接埠不正確", MessageBoxButton.OK, MessageBoxImage.Information); port.Focus(); return; }
+                if (string.IsNullOrWhiteSpace(user.Text)) { MessageBox.Show(dialog, "請輸入 FTP 使用者名稱。", "需要帳號", MessageBoxButton.OK, MessageBoxImage.Information); user.Focus(); return; }
+                result = new ConnectionSettings { Host = host.Text.Trim(), Port = parsedPort, User = user.Text.Trim(), Password = password.Text, InitialPath = string.IsNullOrWhiteSpace(initial.Text) ? "/" : initial.Text.Trim(), EncodingName = encoding.SelectedItem == null ? "UTF-8" : encoding.SelectedItem.ToString() };
+                dialog.DialogResult = true; dialog.Close();
+            };
+            dialog.Loaded += delegate { if (string.IsNullOrWhiteSpace(host.Text)) host.Focus(); else user.Focus(); };
+            return dialog.ShowDialog() == true ? result : null;
+        }
+
+        private SavedProfile AddOrUpdateProfile(ConnectionSettings settings)
+        {
+            SavedProfile existing = profiles.FirstOrDefault(x => x.Connection != null && string.Equals(x.Connection.Host, settings.Host, StringComparison.OrdinalIgnoreCase) && x.Connection.Port == settings.Port && string.Equals(x.Connection.User, settings.User, StringComparison.OrdinalIgnoreCase));
+            if (existing != null) { existing.Connection = settings; return existing; }
+            existing = profiles.FirstOrDefault(x => x.Connection != null && string.IsNullOrWhiteSpace(x.Connection.Host) && string.IsNullOrWhiteSpace(x.Connection.User));
+            if (existing != null) { existing.Connection = settings; return existing; }
+            SavedProfile added = new SavedProfile { Connection = settings }; profiles.Add(added); return added;
+        }
+
+        private void SelectProfile(SavedProfile profile)
+        {
+            if (profile == null) return;
+            if (Connected && profile != selectedProfile) Disconnect();
+            selectedProfile = profile;
+            ComboBox selector = Find<ComboBox>("ProfileBox");
+            loadingProfiles = true; selector.Items.Refresh(); selector.SelectedItem = profile; loadingProfiles = false;
+            ApplyProfile(profile); UpdateProfileSummary(); SaveProfiles();
+        }
+
+        private void AddProfile()
+        {
+            if (busy) return;
+            StoreCurrentProfile();
+            ConnectionSettings current = selectedProfile == null ? new ConnectionSettings() : selectedProfile.Connection;
+            ConnectionSettings entered = AskForConnection(current);
+            if (entered == null) return;
+            SavedProfile profile = AddOrUpdateProfile(entered);
+            SelectProfile(profile);
         }
 
         private void ManageProfiles()
         {
             if (busy) return;
             StoreCurrentProfile();
-            Window dialog = new Window { Title = "FTP 帳號管理", Owner = Window, Width = 560, Height = 470, MinWidth = 500, MinHeight = 390, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = new SolidColorBrush(Color.FromRgb(245, 245, 247)), FontFamily = Window.FontFamily };
+            Window dialog = new Window { Title = "FTP 帳號", Owner = Window, Width = 540, Height = 430, MinWidth = 480, MinHeight = 360, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = new SolidColorBrush(Color.FromRgb(245, 245, 247)), FontFamily = Window.FontFamily };
             Grid root = new Grid { Margin = new Thickness(20) };
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            StackPanel heading = new StackPanel { Margin = new Thickness(3, 0, 0, 15) };
-            heading.Children.Add(new TextBlock { Text = "管理 FTP 帳號", FontSize = 22, FontWeight = FontWeights.SemiBold });
-            heading.Children.Add(new TextBlock { Text = "每個帳號都會記住自己的伺服器、路徑與密碼。", FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 130)), Margin = new Thickness(0, 6, 0, 0) });
+            StackPanel heading = new StackPanel { Margin = new Thickness(3, 0, 0, 12) };
+            heading.Children.Add(new TextBlock { Text = "選擇 FTP 帳號", FontSize = 21, FontWeight = FontWeights.SemiBold });
+            heading.Children.Add(new TextBlock { Text = "帳號名稱就是使用者名稱；選取後會帶入已保存的密碼。", FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 130)), Margin = new Thickness(0, 5, 0, 0) });
             root.Children.Add(heading);
-            ListBox list = new ListBox { ItemsSource = profiles, SelectedItem = selectedProfile, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Margin = new Thickness(0, 0, 0, 14), Padding = new Thickness(2) };
+            ListBox list = new ListBox { ItemsSource = profiles, SelectedItem = selectedProfile, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Margin = new Thickness(0, 0, 0, 12), Padding = new Thickness(2) };
             list.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
             DataTemplate card = new DataTemplate(typeof(SavedProfile));
             FrameworkElementFactory border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.BackgroundProperty, Brushes.White); border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(229, 229, 235))); border.SetValue(Border.BorderThicknessProperty, new Thickness(1)); border.SetValue(Border.CornerRadiusProperty, new CornerRadius(12)); border.SetValue(Border.PaddingProperty, new Thickness(15, 12, 15, 12)); border.SetValue(Border.MarginProperty, new Thickness(1, 3, 1, 3));
             FrameworkElementFactory stack = new FrameworkElementFactory(typeof(StackPanel));
             FrameworkElementFactory title = new FrameworkElementFactory(typeof(TextBlock)); title.SetBinding(TextBlock.TextProperty, new Binding("Name")); title.SetValue(TextBlock.FontSizeProperty, 14.0); title.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold); stack.AppendChild(title);
-            FrameworkElementFactory details = new FrameworkElementFactory(typeof(TextBlock)); details.SetBinding(TextBlock.TextProperty, new Binding("Connection.Host") { StringFormat = "{0}" }); details.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush(Color.FromRgb(120, 120, 130))); details.SetValue(TextBlock.FontSizeProperty, 11.0); details.SetValue(TextBlock.MarginProperty, new Thickness(0, 5, 0, 0)); stack.AppendChild(details);
-            FrameworkElementFactory user = new FrameworkElementFactory(typeof(TextBlock)); user.SetBinding(TextBlock.TextProperty, new Binding("Connection.User") { StringFormat = "帳號：{0}" }); user.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush(Color.FromRgb(120, 120, 130))); user.SetValue(TextBlock.FontSizeProperty, 11.0); user.SetValue(TextBlock.MarginProperty, new Thickness(0, 2, 0, 0)); stack.AppendChild(user);
+            FrameworkElementFactory details = new FrameworkElementFactory(typeof(TextBlock)); details.SetBinding(TextBlock.TextProperty, new Binding("ServerLabel")); details.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush(Color.FromRgb(120, 120, 130))); details.SetValue(TextBlock.FontSizeProperty, 11.0); details.SetValue(TextBlock.MarginProperty, new Thickness(0, 5, 0, 0)); stack.AppendChild(details);
             border.AppendChild(stack); card.VisualTree = border; list.ItemTemplate = card;
+            list.MouseDoubleClick += delegate { if (list.SelectedItem is SavedProfile) { SelectProfile((SavedProfile)list.SelectedItem); dialog.Close(); } };
             Grid.SetRow(list, 1); root.Children.Add(list);
             StackPanel footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             Button add = new Button { Content = "＋ 新增帳號", Margin = new Thickness(0, 0, 7, 0), Padding = new Thickness(11, 7, 11, 7) };
-            Button rename = new Button { Content = "改名", Margin = new Thickness(0, 0, 7, 0), Padding = new Thickness(11, 7, 11, 7) };
-            Button delete = new Button { Content = "刪除", Margin = new Thickness(0, 0, 7, 0), Padding = new Thickness(11, 7, 11, 7), Foreground = new SolidColorBrush(Color.FromRgb(220, 67, 67)) };
+            Button delete = new Button { Content = "移除帳號", Margin = new Thickness(0, 0, 7, 0), Padding = new Thickness(11, 7, 11, 7), Foreground = new SolidColorBrush(Color.FromRgb(220, 67, 67)) };
             Button use = new Button { Content = "使用此帳號", Padding = new Thickness(13, 7, 13, 7), Background = new SolidColorBrush(Color.FromRgb(0, 122, 255)), Foreground = Brushes.White, IsDefault = true };
-            footer.Children.Add(add); footer.Children.Add(rename); footer.Children.Add(delete); footer.Children.Add(use); Grid.SetRow(footer, 2); root.Children.Add(footer); dialog.Content = root;
+            footer.Children.Add(add); footer.Children.Add(delete); footer.Children.Add(use); Grid.SetRow(footer, 2); root.Children.Add(footer); dialog.Content = root;
             add.Click += delegate
             {
-                string name = AskForName("新增 FTP 帳號", "新 FTP 帳號"); if (string.IsNullOrWhiteSpace(name)) return;
-                ConnectionSettings current = selectedProfile.Connection ?? new ConnectionSettings();
-                SavedProfile added = new SavedProfile { Name = name, Connection = new ConnectionSettings { Host = current.Host, Port = current.Port, InitialPath = current.InitialPath, EncodingName = current.EncodingName } };
-                profiles.Add(added); list.Items.Refresh(); list.SelectedItem = added; SaveProfiles();
+                ConnectionSettings current = selectedProfile == null ? new ConnectionSettings() : selectedProfile.Connection;
+                ConnectionSettings entered = AskForConnection(current); if (entered == null) return;
+                SavedProfile added = AddOrUpdateProfile(entered); list.Items.Refresh(); list.SelectedItem = added; SelectProfile(added);
             };
-            rename.Click += delegate { SavedProfile chosen = list.SelectedItem as SavedProfile; if (chosen == null) return; string name = AskForName("重新命名 FTP 帳號", chosen.Name); if (!string.IsNullOrWhiteSpace(name)) { chosen.Name = name; list.Items.Refresh(); SaveProfiles(); } };
             delete.Click += delegate
             {
-                SavedProfile chosen = list.SelectedItem as SavedProfile; if (chosen == null) return;
-                if (MessageBox.Show(dialog, "刪除「" + chosen.Name + "」的本機帳號設定？", "刪除 FTP 帳號", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                SavedProfile chosen = list.SelectedItem as SavedProfile; if (chosen == null || string.IsNullOrWhiteSpace(chosen.Connection.User)) return;
+                if (MessageBox.Show(dialog, "移除此電腦保存的「" + chosen.Name + "」帳號與密碼？", "移除 FTP 帳號", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
                 bool wasSelected = chosen == selectedProfile; profiles.Remove(chosen);
-                if (profiles.Count == 0) profiles.Add(new SavedProfile { Name = "新增 FTP 帳號" });
+                if (profiles.Count == 0) profiles.Add(new SavedProfile());
                 list.Items.Refresh(); list.SelectedItem = profiles[0];
-                if (wasSelected) { if (Connected) Disconnect(); selectedProfile = (SavedProfile)list.SelectedItem; ApplyProfile(selectedProfile); UpdateProfileSummary(); }
-                SaveProfiles();
+                if (wasSelected) SelectProfile((SavedProfile)list.SelectedItem); else SaveProfiles();
             };
-            use.Click += delegate { SavedProfile chosen = list.SelectedItem as SavedProfile; if (chosen != null) { if (Connected && chosen != selectedProfile) Disconnect(); selectedProfile = chosen; loadingProfiles = true; Find<ComboBox>("ProfileBox").Items.Refresh(); Find<ComboBox>("ProfileBox").SelectedItem = chosen; loadingProfiles = false; ApplyProfile(chosen); UpdateProfileSummary(); SaveProfiles(); } dialog.Close(); };
+            use.Click += delegate { SavedProfile chosen = list.SelectedItem as SavedProfile; if (chosen != null) SelectProfile(chosen); dialog.Close(); };
             dialog.ShowDialog();
         }
 
@@ -873,7 +925,7 @@ namespace FtpFlow
             Label("CountLabel").Text = Connected ? items.Count(x => x.IsDirectory) + " 個資料夾 · " + items.Count(x => !x.IsDirectory) + " 個檔案" + (query.Length > 0 ? " · 符合 " + shown + " 項" : "") : "連線後即可瀏覽資料夾與檔案";
             Find<StackPanel>("EmptyPanel").Visibility = shown == 0 ? Visibility.Visible : Visibility.Collapsed;
             Label("EmptyTitle").Text = !Connected ? "你的檔案，準備就緒" : query.Length > 0 ? "沒有符合的檔案" : "這裡還沒有檔案";
-            Label("EmptyHint").Text = !Connected ? "在左側確認連線資訊，再按「連線到伺服器」。" : query.Length > 0 ? "換個關鍵字，或清除搜尋條件再試一次。" : "按「上傳檔案」，把第一個檔案放到這裡。";
+            Label("EmptyHint").Text = !Connected ? "選擇左側帳號，或按「＋」新增帳號，再按連線。" : query.Length > 0 ? "換個關鍵字，或清除搜尋條件再試一次。" : "按「上傳檔案」，把第一個檔案放到這裡。";
             SizeColumns(); UpdateActions();
         }
 
@@ -887,7 +939,7 @@ namespace FtpFlow
             Button("DeleteButton").IsEnabled = ready && Files.SelectedItems.Count > 0;
             Button("ConnectButton").IsEnabled = !busy; Button("DisconnectButton").IsEnabled = ready;
             Find<ComboBox>("ProfileBox").IsEnabled = !busy; Button("ManageAccountsInSettingsButton").IsEnabled = !busy;
-            Button("ManageProfilesButton").IsEnabled = !busy;
+            Button("AddProfileButton").IsEnabled = !busy;
             foreach (string name in new string[] { "HostBox", "PortBox", "UserBox", "PassBox", "InitialBox" }) Text(name).IsEnabled = !busy;
             Find<ComboBox>("EncodingBox").IsEnabled = !busy; Text("PathBox").IsEnabled = ready; Files.IsEnabled = !busy;
             Label("SelectionLabel").Text = Files.SelectedItems.Count > 0 ? "已選取 " + Files.SelectedItems.Count + " 項" : "可多選檔案 · 雙擊資料夾進入";

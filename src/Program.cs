@@ -413,7 +413,7 @@ namespace FtpFlow
                         HttpListenerContext context;
                         try { context = await listener.GetContextAsync(); }
                         catch { break; }
-                        Task.Run(async delegate { await HandleApiRequest(context); });
+                        Task requestTask = Task.Run(async delegate { await HandleApiRequest(context); });
                     }
                 });
                 SaveProfiles();

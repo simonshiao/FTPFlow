@@ -1,0 +1,11 @@
+<FtpFlow>
+  <Host>
+  </Host>
+  <User>
+  </User>
+  <Password>
+  </Password>
+  <InitialPath>/</InitialPath>
+  <Port>21</Port>
+  <Encoding>UTF-8</Encoding>
+</FtpFlow>

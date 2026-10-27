@@ -1,0 +1,14 @@
+# Local settings and generated output
+settings.xml
+startup-error.log
+FTPFlow.exe
+FTPFlow-*.exe
+FTPFlow.exe.config
+bin/
+obj/
+tests/
+Verify.cmd
+logs/
+verification/
+original/
+*.zip

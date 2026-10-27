@@ -13,12 +13,17 @@ namespace FtpFlow
 {
     public sealed class ConnectionSettings
     {
-        public string Host = "";
-        public int Port = 21;
-        public string User = "";
-        public string Password = "";
-        public string InitialPath = "/simon";
-        public string EncodingName = "UTF-8";
+        public string Host { get; set; }
+        public int Port { get; set; }
+        public string User { get; set; }
+        public string Password { get; set; }
+        public string InitialPath { get; set; }
+        public string EncodingName { get; set; }
+
+        public ConnectionSettings()
+        {
+            Host = ""; Port = 21; User = ""; Password = ""; InitialPath = "/simon"; EncodingName = "UTF-8";
+        }
     }
 
     public sealed class RemoteItem

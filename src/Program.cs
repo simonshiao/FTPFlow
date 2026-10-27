@@ -51,9 +51,14 @@ namespace FtpFlow
     {
         private sealed class SavedProfile
         {
-            public string Id = Guid.NewGuid().ToString("N");
-            public string Name = "新帳號";
-            public ConnectionSettings Connection = new ConnectionSettings();
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public ConnectionSettings Connection { get; set; }
+
+            public SavedProfile()
+            {
+                Id = Guid.NewGuid().ToString("N"); Name = "新帳號"; Connection = new ConnectionSettings();
+            }
         }
 
         public Window Window { get; private set; }
@@ -95,7 +100,15 @@ namespace FtpFlow
             detailPanel = Files.ItemsPanel;
             detailItemStyle = Files.ItemContainerStyle;
             SetViewMode(LoadTilePreference(), false);
+            Button("ManageAccountsInSettingsButton").Click += delegate { ManageProfiles(); };
             Button("ManageProfilesButton").Click += delegate { ManageProfiles(); };
+            Button("SettingsGearButton").Click += delegate
+            {
+                Expander settings = Find<Expander>("ConnectionSettingsExpander");
+                settings.IsExpanded = !settings.IsExpanded;
+                Button("SettingsGearButton").ToolTip = settings.IsExpanded ? "收合連線與 API 設定" : "展開連線與 API 設定";
+                if (settings.IsExpanded) Window.Dispatcher.BeginInvoke(new Action(delegate { Find<ScrollViewer>("SettingsScroll").ScrollToTop(); }));
+            };
             Find<ComboBox>("ProfileBox").SelectionChanged += delegate
             {
                 if (loadingProfiles || busy) return;
@@ -106,6 +119,7 @@ namespace FtpFlow
                 if (Connected) Disconnect();
                 selectedProfile = next;
                 ApplyProfile(next);
+                UpdateProfileSummary();
             };
             Button("ApiToggleButton").Click += delegate { ToggleApiServer(); };
             Button("ApiCopyButton").Click += delegate { CopyApiAccess(); };
@@ -283,6 +297,7 @@ namespace FtpFlow
                 Text("ApiTokenBox").Text = apiToken;
                 Text("ApiEndpointBox").Text = "http://127.0.0.1:" + apiPort + "/api/v1";
                 ApplyProfile(selectedProfile);
+                UpdateProfileSummary();
                 if (migrated) SaveProfiles();
             }
             catch { Label("StatusLabel").Text = "帳號設定無法讀取，請使用帳號管理重新設定。"; }
@@ -338,6 +353,15 @@ namespace FtpFlow
             Find<ComboBox>("EncodingBox").SelectedIndex = enc == "GBK" ? 1 : enc == "Big5" ? 2 : 0;
             Find<ComboBox>("ProfileBox").SelectedItem = profile;
             loadingProfiles = false;
+        }
+
+        private void UpdateProfileSummary()
+        {
+            SavedProfile profile = selectedProfile;
+            ConnectionSettings settings = profile == null ? null : profile.Connection;
+            string host = settings == null || string.IsNullOrWhiteSpace(settings.Host) ? "尚未設定伺服器" : settings.Host + ":" + settings.Port;
+            string user = settings == null || string.IsNullOrWhiteSpace(settings.User) ? "請到設定填入帳號" : settings.User;
+            Find<TextBlock>("ProfileSummaryLabel").Text = profile == null ? "請新增 FTP 帳號" : host + "  ·  " + user;
         }
 
         private XElement ProfileElement(SavedProfile profile)
@@ -651,10 +675,10 @@ namespace FtpFlow
                 bool wasSelected = chosen == selectedProfile; profiles.Remove(chosen);
                 if (profiles.Count == 0) profiles.Add(new SavedProfile { Name = "新增 FTP 帳號" });
                 list.Items.Refresh(); list.SelectedItem = profiles[0];
-                if (wasSelected) { if (Connected) Disconnect(); selectedProfile = (SavedProfile)list.SelectedItem; ApplyProfile(selectedProfile); }
+                if (wasSelected) { if (Connected) Disconnect(); selectedProfile = (SavedProfile)list.SelectedItem; ApplyProfile(selectedProfile); UpdateProfileSummary(); }
                 SaveProfiles();
             };
-            use.Click += delegate { SavedProfile chosen = list.SelectedItem as SavedProfile; if (chosen != null) { if (Connected && chosen != selectedProfile) Disconnect(); selectedProfile = chosen; loadingProfiles = true; Find<ComboBox>("ProfileBox").Items.Refresh(); Find<ComboBox>("ProfileBox").SelectedItem = chosen; loadingProfiles = false; ApplyProfile(chosen); SaveProfiles(); } dialog.Close(); };
+            use.Click += delegate { SavedProfile chosen = list.SelectedItem as SavedProfile; if (chosen != null) { if (Connected && chosen != selectedProfile) Disconnect(); selectedProfile = chosen; loadingProfiles = true; Find<ComboBox>("ProfileBox").Items.Refresh(); Find<ComboBox>("ProfileBox").SelectedItem = chosen; loadingProfiles = false; ApplyProfile(chosen); UpdateProfileSummary(); SaveProfiles(); } dialog.Close(); };
             dialog.ShowDialog();
         }
 
@@ -862,7 +886,8 @@ namespace FtpFlow
             Button("DownloadButton").IsEnabled = ready && Files.SelectedItems.Cast<RemoteItem>().Any(x => !x.IsDirectory && !x.IsLink);
             Button("DeleteButton").IsEnabled = ready && Files.SelectedItems.Count > 0;
             Button("ConnectButton").IsEnabled = !busy; Button("DisconnectButton").IsEnabled = ready;
-            Find<ComboBox>("ProfileBox").IsEnabled = !busy; Button("ManageProfilesButton").IsEnabled = !busy;
+            Find<ComboBox>("ProfileBox").IsEnabled = !busy; Button("ManageAccountsInSettingsButton").IsEnabled = !busy;
+            Button("ManageProfilesButton").IsEnabled = !busy;
             foreach (string name in new string[] { "HostBox", "PortBox", "UserBox", "PassBox", "InitialBox" }) Text(name).IsEnabled = !busy;
             Find<ComboBox>("EncodingBox").IsEnabled = !busy; Text("PathBox").IsEnabled = ready; Files.IsEnabled = !busy;
             Label("SelectionLabel").Text = Files.SelectedItems.Count > 0 ? "已選取 " + Files.SelectedItems.Count + " 項" : "可多選檔案 · 雙擊資料夾進入";
